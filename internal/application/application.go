@@ -61,22 +61,28 @@ type Request struct {
 	Expression string `json:"expression"`
 }
 
+type Answer struct {
+	Result string `json:"result,omitempty"`
+	Error  string `json:"error,omitempty"`
+}
+
 func CalcHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
 	request := new(Request)
 	defer r.Body.Close()
 	err := json.NewDecoder(r.Body).Decode(&request)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprintf(w, "{\n\t\"error\": \"%s\"\n}", "Internal server error")
+		json.NewEncoder(w).Encode(Answer{Error: "Internal server error"})
 		return
 	}
 	request.Expression = strings.TrimSpace(request.Expression)
 	res, err := calculation.Calc(request.Expression)
 	if err != nil {
 		w.WriteHeader(http.StatusUnprocessableEntity)
-		fmt.Fprintf(w, "{\n\t\"error\": \"%s\"\n}", "Expression is not valid")
+		json.NewEncoder(w).Encode(Answer{Error: "Expression is not valid"})
 	} else {
-		fmt.Fprintf(w, "{\n\t\"result\": \"%f\"\n}", res)
+		json.NewEncoder(w).Encode(Answer{Result: fmt.Sprintf("%f", res)})
 	}
 }
 
