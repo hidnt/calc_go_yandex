@@ -2,6 +2,7 @@ package application
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -12,8 +13,11 @@ type testCase struct {
 	name               string
 	expression         string
 	exceptedStatusCode int
-	exceptedRes        float64
-	wantError          bool
+	expectedAns        Answer
+}
+
+type CalcRequest struct {
+	Expression string `json:"expression"`
 }
 
 func TestCalc(t *testing.T) {
@@ -22,61 +26,59 @@ func TestCalc(t *testing.T) {
 			name:               "minus",
 			expression:         "-10*(-5+2)",
 			exceptedStatusCode: http.StatusOK,
-			exceptedRes:        30,
-			wantError:          false,
+			expectedAns:        Answer{Result: fmt.Sprintf("%f", float64(30))},
 		},
 		{
 			name:               "priority",
 			expression:         "(2+2-(-2+7)*2)/2",
 			exceptedStatusCode: http.StatusOK,
-			exceptedRes:        -3,
-			wantError:          false,
+			expectedAns:        Answer{Result: fmt.Sprintf("%f", float64(-3))},
 		},
 		{
 			name:               "fractional numbers 2",
 			expression:         "140.5*12.5/10",
 			exceptedStatusCode: http.StatusOK,
-			exceptedRes:        175.625,
-			wantError:          false,
+			expectedAns:        Answer{Result: fmt.Sprintf("%f", float64(175.625))},
 		},
 		{
 			name:               "incorrect expression 1",
 			expression:         "1238)",
 			exceptedStatusCode: http.StatusUnprocessableEntity,
-			exceptedRes:        0,
-			wantError:          true,
+			expectedAns:        Answer{Error: "Expression is not valid"},
 		},
 		{
 			name:               "incorrect expression 2",
 			expression:         "124+2-",
 			exceptedStatusCode: http.StatusUnprocessableEntity,
-			exceptedRes:        0,
-			wantError:          true,
+			expectedAns:        Answer{Error: "Expression is not valid"},
 		},
 		{
 			name:               "incorrect expression 3",
 			expression:         "incorrect",
 			exceptedStatusCode: http.StatusUnprocessableEntity,
-			exceptedRes:        0,
-			wantError:          true,
+			expectedAns:        Answer{Error: "Expression is not valid"},
 		},
 	}
 	for _, testCase := range testCases {
-		t.Run(testCase.name, func(t *testing.T) {
-			jsonExpression := fmt.Sprintf("{\"expression\": \"%s\"}", testCase.expression)
-			request, _ := http.NewRequest(http.MethodPost, "", bytes.NewBuffer([]byte(jsonExpression)))
-			response := httptest.NewRecorder()
-			CalcHandler(response, request)
-			excepted := fmt.Sprintf("{\n\t\"result\": \"%f\"\n}", testCase.exceptedRes)
-			if testCase.wantError {
-				if testCase.exceptedStatusCode != response.Code {
-					t.Errorf("successful case is %d, but returns error: %d", testCase.exceptedStatusCode, response.Code)
-				}
-			} else {
-				if response.Body.String() != excepted {
-					t.Errorf("Want %s, got %s", excepted, response.Body.String())
-				}
-			}
-		})
+		requestBody, _ := json.Marshal(CalcRequest{Expression: testCase.expression})
+		r := httptest.NewRequest(http.MethodPost, "/", bytes.NewBuffer(requestBody))
+		w := httptest.NewRecorder()
+
+		CalcHandler(w, r)
+
+		if w.Code != testCase.exceptedStatusCode {
+			t.Errorf("%s returned wrong status code: got %v want %v", testCase.name, w.Code, testCase.exceptedStatusCode)
+		}
+
+		var ans Answer
+		err := json.NewDecoder(w.Body).Decode(&ans)
+
+		if err != nil {
+			t.Errorf("%s returned error when decoding response body: %v", testCase.name, err)
+		}
+
+		if ans != testCase.expectedAns {
+			t.Errorf("%s returned incorrect body: got %#v want %#v", testCase.name, ans, testCase.expectedAns)
+		}
 	}
 }
